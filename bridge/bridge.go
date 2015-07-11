@@ -90,6 +90,9 @@ func (b *Bridge) Sync(quiet bool) {
 	b.Lock()
 	defer b.Unlock()
 
+	// this
+	b.services = make(map[string][]*Service)
+
 	containers, err := b.docker.ListContainers(dockerapi.ListContainersOptions{})
 	if err != nil && quiet {
 		log.Println("error listing containers, skipping sync")

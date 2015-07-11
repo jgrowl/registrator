@@ -73,61 +73,78 @@ func main() {
 		Cleanup:         *cleanup,
 	})
 
-	// Start event listener before listing containers to avoid missing anything
-	events := make(chan *dockerapi.APIEvents)
-	assert(docker.AddEventListener(events))
-	log.Println("Listening for Docker events ...")
+	if true {
+		ticker := time.NewTicker(5 * time.Second).C
+		doneChan := make(chan bool)
+		for {
+			select {
+			case <- ticker:
 
-	b.Sync(false)
-
-	quit := make(chan struct{})
-
-	// Start the TTL refresh timer
-	if *refreshInterval > 0 {
-		ticker := time.NewTicker(time.Duration(*refreshInterval) * time.Second)
-		go func() {
-			for {
-				select {
-				case <-ticker.C:
-					b.Refresh()
-				case <-quit:
-					ticker.Stop()
-					return
-				}
+				b.Sync(false)
+			case <- doneChan:
+				fmt.Println("Done")
+				return
 			}
-		}()
-	}
-
-	// Start the resync timer if enabled
-	if *resyncInterval > 0 {
-		resyncTicker := time.NewTicker(time.Duration(*resyncInterval) * time.Second)
-		go func() {
-			for {
-				select {
-				case <-resyncTicker.C:
-					b.Sync(true)
-				case <-quit:
-					resyncTicker.Stop()
-					return
-				}
-			}
-		}()
-	}
-
-	// Process Docker events
-	for msg := range events {
-		switch msg.Status {
-		case "start":
-			go b.Add(msg.ID)
-		case "die":
-			go b.RemoveOnExit(msg.ID)
-		case "stop", "kill":
-			go b.Remove(msg.ID)
 		}
-	}
+		log.Fatal("Docker sync loop closed")
+	} else {
+		// Start event listener before listing containers to avoid missing anything
+		events := make(chan *dockerapi.APIEvents)
+		assert(docker.AddEventListener(events))
+		log.Println("Listening for Docker events ...")
 
-	close(quit)
-	log.Fatal("Docker event loop closed") // todo: reconnect?
+		b.Sync(false)
+
+		quit := make(chan struct{})
+
+		// Start the TTL refresh timer
+		if *refreshInterval > 0 {
+			ticker := time.NewTicker(time.Duration(*refreshInterval) * time.Second)
+			go func() {
+				for {
+					select {
+					case <-ticker.C:
+						b.Refresh()
+					case <-quit:
+						ticker.Stop()
+						return
+					}
+				}
+			}()
+		}
+
+		// Start the resync timer if enabled
+		if *resyncInterval > 0 {
+			resyncTicker := time.NewTicker(time.Duration(*resyncInterval) * time.Second)
+			go func() {
+				for {
+					select {
+					case <-resyncTicker.C:
+						b.Sync(true)
+					case <-quit:
+						resyncTicker.Stop()
+						return
+					}
+				}
+			}()
+		}
+
+		// Process Docker events
+		for msg := range events {
+			switch msg.Status {
+			case "start":
+				go b.Add(msg.ID)
+			case "die":
+				go b.RemoveOnExit(msg.ID)
+			case "stop", "kill":
+				go b.Remove(msg.ID)
+			}
+		}
+
+		close(quit)
+		log.Fatal("Docker event loop closed") // todo: reconnect?
+
+	}
 }
 
 func getDockerClient() (*dockerapi.Client, error)  {
